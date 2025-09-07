@@ -1,7 +1,7 @@
 import networkx as nx
 from langgraph.graph import StateGraph, END
 from .state import AgentState
-from .nodes import router_node, retrieve_node, generate_node, repo_eval_node, search_node
+from .nodes import router_node, retrieve_node, generate_node, reflect_node, repo_eval_node, search_node
 
 def compile_graph():
     g = StateGraph(AgentState)
@@ -9,6 +9,7 @@ def compile_graph():
     g.add_node("router", router_node)
     g.add_node("retrieve", retrieve_node)
     g.add_node("generate", generate_node)
+    g.add_node("reflect", reflect_node)
     g.add_node("repo_eval", repo_eval_node)
     g.add_node("search", search_node)
 
@@ -26,7 +27,8 @@ def compile_graph():
     )
 
     g.add_edge("retrieve", "generate")
-    g.add_edge("generate", END)
+    g.add_edge("generate", "reflect")   
+    g.add_edge("reflect", END)
     g.add_edge("repo_eval", END)
     g.add_edge("search", END)
 

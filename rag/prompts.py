@@ -14,3 +14,17 @@ Now answer clearly in 3–8 sentences, then add:
 References:
 - list each source with file/repo/video and chapter/lesson if available.
 """
+
+REFLECT_PROMPT = """
+You are a verifier. Given:
+1) The student's question
+2) The retrieved context (explicit chunks labelled [0], [1], ...)
+3) The LLM's candidate answer
+
+Task:
+- Mark any statements in the answer that are NOT directly supported by the retrieved context.
+- If unsupported statements exist, rewrite the answer using ONLY facts present in the context.
+- Output JSON with keys: {"verified": bool, "answer": "<final_answer>", "issues": ["list of unsupported claims as short strings"]}
+
+Return only JSON.
+"""
