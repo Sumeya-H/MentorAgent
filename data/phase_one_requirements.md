@@ -28,7 +28,7 @@ Stretch Goals (Optional) (3 points each)
 - Allow switching between multiple document sets.
 - Add a summarization mode in addition to Q&A.
 - Deploy your app to the cloud (e.g., Vercel, Streamlit Cloud, Render, HuggingFace Spaces).
-TOTAL SCORE (30/30)
+TOTAL SCORE (25/25)
 Deliverables
 Each participant must submit via the provided form:
 1. GitHub Repository URL containing:
