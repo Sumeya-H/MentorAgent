@@ -6,6 +6,8 @@ from langchain.prompts import ChatPromptTemplate
 from rag.prompts import SYSTEM, QA_TEMPLATE
 from rag.index import load_chroma, retriever_topk
 from evaluator.repo_eval import evaluate_repo
+from rag.retrievers import hybrid_retrieve
+from rag.reranker import rerank
 
 load_dotenv()
 # Singletons
@@ -29,9 +31,12 @@ def router_node(state):
 
 # -------- Retrieve (for QA) --------
 def retrieve_node(state):
-    docs = retriever_topk(_vs(), state["question"], k=4)
+    docs = hybrid_retrieve(state["question"], _vs(), k=8)   # get more
+    docs = rerank(state["question"], docs, top_k=4)         # keep best
+    
     ctx = "\n\n".join([f"[{i}] {d.page_content}" for i,d in enumerate(docs)])
-    refs = [d.metadata for d in docs]
+    refs = [d.metadata | {"id": i} for i,d in enumerate(docs)]  # track index
+    
     return {"context": ctx, "refs": refs}
 
 # -------- Generate (QA) --------
@@ -42,12 +47,19 @@ def generate_node(state):
     )
     msgs = [{"role":"system","content":SYSTEM},{"role":"user","content":prompt}]
     out = LLM.invoke(msgs).content
-    # add explicit refs at the end
+
+    # Inline citations: replace doc markers [i]
+    cited_answer = out
+    for ref in state.get("refs", []):
+        cited_answer = cited_answer.replace(f"[{ref['id']}]", f"[{ref['id']}]")
+
+    # Tail references
     tail = ["\nReferences:"]
     for r in state.get("refs", []):
         src = r.get("source_file") or r.get("repo") or r.get("video_id") or r.get("path") or r.get("source","?")
-        tail.append(f"- {src} | {r.get('reference', r.get('chapter','?'))}")
-    return {"answer": out + "\n" + "\n".join(tail)}
+        tail.append(f"[{r['id']}] {src} | {r.get('reference', r.get('chapter','?'))}")
+    
+    return {"answer": cited_answer + "\n" + "\n".join(tail)}
 
 # -------- Repo Evaluator --------
 def repo_eval_node(state):

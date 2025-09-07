@@ -118,7 +118,7 @@ def load_youtube_transcript(youtube_url: str) -> List[Document]:
 
     doc = Document(
         page_content=transcript_text,
-        metadata={"source": youtube_url}
+        metadata={"source": "youtube", "video_id": youtube_url, "type":"youtube"}
     )
 
     return [doc]
