@@ -8,3 +8,5 @@ class AgentState(TypedDict, total=False):
     answer: str
     repo: Optional[str]
     search_query: Optional[str]
+    memory: List[Dict[str, str]]  # e.g. [{"q":"...", "a":"...", "refs":"..."}]
+    verified: bool  # set true when reflection/verification passed
