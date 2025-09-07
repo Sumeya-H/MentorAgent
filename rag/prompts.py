@@ -19,6 +19,7 @@ REFLECT_PROMPT = """
 You are a verifier. Given:
 1) The student's question
 2) The retrieved context (explicit chunks labelled [0], [1], ...)
+4) The history of previous Q&A (if any)
 3) The LLM's candidate answer
 
 Task:

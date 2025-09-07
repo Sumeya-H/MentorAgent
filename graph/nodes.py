@@ -26,6 +26,10 @@ def router_node(state):
     print("<<<<<<<<<<<<<<<<<<<---- Router node activated.--->>>>>>>>>>>>>>>>>>>")
     print("Router input state:", state)
     q = state["question"].strip().lower()
+
+    if "reset memory" in q or "clear history" in q:
+        return {"route": "reset"}
+    
     route = "qa"
     if "evaluate repo" in q or "review repo" in q or "check repo" in q or state.get("repo"):
         route = "repo_eval"
@@ -49,9 +53,14 @@ def retrieve_node(state):
 def generate_node(state):
     print("<<<<<<<<<<<<<<<<<<<---- Generate node activated.--->>>>>>>>>>>>>>>>>>>")
     print("Generate input state:", state)
+
+    # Use last 3 turns of memory
+    history = "\n".join([f"Q: {m['q']}\nA: {m['a']}" for m in state.get("memory", [])[-3:]])
+    full_context = (history + "\n\n" if history else "") + (state.get("context") or "NO CONTEXT")
+
     prompt = ChatPromptTemplate.from_template(QA_TEMPLATE).format(
         question=state["question"],
-        context=state["context"] or "NO CONTEXT"
+        context=full_context
     )
     msgs = [{"role":"system","content":SYSTEM},{"role":"user","content":prompt}]
     out = LLM.invoke(msgs).content
@@ -80,9 +89,13 @@ def reflect_node(state):
 
     # Use candidate_answer from generate_node for reflection
     candidate = state.get("candidate_answer", state.get("answer", ""))
+    
+    # History (last 3 turns)
+    history = "\n".join([f"Q: {m['q']}\nA: {m['a']}" for m in state.get("memory", [])[-3:]])
+    full_context = (history + "\n\n" if history else "") + (state.get("context") or "NO CONTEXT")
     # Build verifier prompt
     prompt = f"""Question: {state['question']}
-Context: {state.get('context','')}
+Context: {full_context}
 Candidate answer: {candidate}
 {REFLECT_PROMPT}
 """
@@ -128,6 +141,11 @@ Candidate answer: {candidate}
         "memory": mem,
         "issues": j.get("issues", []),
     }
+
+# -------- Reset memory (QA) --------
+def reset_node(state):
+    return {"answer": "✅ Memory has been cleared.", "memory": []}
+
 # -------- Repo Evaluator --------
 def repo_eval_node(state):
     print("<<<<<<<<<<<<<<<<<<<---- Repo Eval node activated.--->>>>>>>>>>>>>>>>>>>")

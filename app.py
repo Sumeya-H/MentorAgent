@@ -45,14 +45,51 @@ tab1, tab2, tab3 = st.tabs(["Chat (Q&A)", "Repo Evaluator", "Knowledge Search"])
 
 with tab1:
     st.subheader("Ask about bootcamp materials")
-    q = st.text_input("Your question (e.g., What are Phase One project requirements?)", key="qa")
-    if st.button("Answer"):
-        if not (Path(persist_dir).exists() and any(Path(persist_dir).iterdir())):
-            st.info("Please build the index first (sidebar).")
+
+    # Initialize chat history
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # --- Clear Chat Button ---
+    if st.button("🗑️ Clear Chat"):
+        st.session_state.chat_history = []   # clear UI chat
+        if "memory" in st.session_state:     # if you keep agent memory in state
+            st.session_state.memory = []     # clear memory too
+        st.rerun()  
+
+    # Display chat history
+    for msg in st.session_state.chat_history:
+        if msg["role"] == "user":
+            st.markdown(f"**🧑 You:** {msg['content']}")
         else:
-            out = graph.invoke({"question": q})
-            st.markdown("### Answer")
-            st.write(out.get("answer","(no answer)"))
+            st.markdown(f"**🤖 Mentor Agent:** {msg['content']}")
+
+    # --- Input handling ---
+    def handle_input():
+        q = st.session_state.chat_input
+        if q:
+            # Save user message
+            st.session_state.chat_history.append({"role": "user", "content": q})
+
+            # Call graph
+            if not (Path(persist_dir).exists() and any(Path(persist_dir).iterdir())):
+                answer = "Please build the index first (sidebar)."
+            else:
+                out = graph.invoke({"question": q})
+                answer = out.get("answer", "(no answer)")
+
+            # Save assistant message
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+
+            # Clear input after sending
+            st.session_state.chat_input = ""
+
+    # Chat input with on_change
+    st.text_input(
+        "Type your question here...",
+        key="chat_input",
+        on_change=handle_input
+    )
 
 with tab2:
     st.subheader("Evaluate a Phase One repo")
