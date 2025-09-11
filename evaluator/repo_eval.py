@@ -77,6 +77,16 @@ def heuristic_scan(owner_repo: str):
     return checks, big[:120000]
 
 def evaluate_repo(owner_repo: str) -> str:
+    url = f"https://api.github.com/repos/{owner_repo}"
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 404:
+            return f"❌ Repository '{owner_repo}' not found on GitHub."
+        elif resp.status_code != 200:
+            return f"⚠️ Could not fetch repository info (status {resp.status_code})."
+    except requests.RequestException as e:
+        return f"⚠️ Error connecting to GitHub: {e}"
+
     checks, code_excerpt = heuristic_scan(owner_repo)
     checklist = "\n".join([f"- {k}: {'✅' if v else '❌'}" for k,v in checks.items()])
 

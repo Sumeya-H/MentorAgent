@@ -9,6 +9,7 @@ chromadb
 sentence_transformers
 pypdf
 youtube_transcript_api
+yt-dlp
 requests
 tiktoken
 langchain_chroma
