@@ -1,7 +1,7 @@
 import networkx as nx
 from langgraph.graph import StateGraph, END
 from .state import AgentState
-from .nodes import router_node, retrieve_node, generate_node, reflect_node, reset_node, repo_eval_node, search_node
+from .nodes import router_node, retrieve_node, generate_node, reflect_node, reset_node, repo_eval_node, search_node, planner_node, action_executor_node
 
 def compile_graph():
     g = StateGraph(AgentState)
@@ -13,6 +13,8 @@ def compile_graph():
     g.add_node("reset", reset_node)
     g.add_node("repo_eval", repo_eval_node)
     g.add_node("search", search_node)
+    g.add_node("planner", planner_node)
+    g.add_node("action_executor", action_executor_node)
 
     g.set_entry_point("router")
 
@@ -24,15 +26,51 @@ def compile_graph():
             "qa": "retrieve",
             "repo_eval": "repo_eval",
             "search": "search",
+            "planner": "planner"
         }
     )
 
     g.add_edge("retrieve", "generate")
     g.add_edge("generate", "reflect")   
-    g.add_edge("reflect", END)
+    #g.add_edge("reflect", END)
+
+    # Reflect conditional edges
+    def reflect_route(state):
+        if not state.get("verified", True):
+            retries = state.get("reflect_retries", 0)
+            if retries < 1:   # allow one retry
+                return "retry"
+        return "end"
+
+    g.add_conditional_edges(
+        "reflect",
+        reflect_route,
+        {
+            "retry": "router",  # go back and retry
+            "end": END
+        }
+    )
     g.add_edge("reset", END)
     g.add_edge("repo_eval", END)
     g.add_edge("search", END)
+    g.add_edge("planner", "action_executor")
+    #g.add_edge("action_executor", "reflect")
+
+    def action_route(state):
+        if not state.get("verified", True):  
+            retries = state.get("plan_retries", 0)
+            if retries < 1:   # allow one re-plan
+                return "retry"
+        return "end"
+
+    g.add_conditional_edges(
+        "action_executor",
+        action_route,
+        {
+            "retry": "planner",  # re-plan if failed
+            "end": "reflect"     # successful → reflect
+        }
+    )
 
     return g.compile()
 

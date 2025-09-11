@@ -1,25 +1,43 @@
 import os
+import json, re
 from dotenv import load_dotenv
 from typing import List, Dict, Any
 from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
-from rag.prompts import SYSTEM, QA_TEMPLATE, REFLECT_PROMPT
+from rag.prompts import SYSTEM, QA_TEMPLATE, REFLECT_PROMPT, PLANNER_PROMPT
 from rag.index import load_chroma, retriever_topk
 from evaluator.repo_eval import evaluate_repo
 from rag.retrievers import hybrid_retrieve
 from rag.reranker import rerank
+from agent.tools import tool_search_docs, tool_fetch_repo, tool_eval_repo, tool_summarize
 
 load_dotenv()
 
 # Singletons
 LLM = ChatGroq(model="llama-3.1-8b-instant", temperature=0.2)
 VERIFIER = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+PLANNER = ChatGroq(model="llama-3.1-8b-instant", temperature=0.5)
 VS = None
 def _vs():
     global VS
     if VS is None:
         VS = load_chroma("vectorstore")
     return VS
+
+def safe_parse_plan(resp: str):
+    try:
+        # Try direct parse first
+        return json.loads(resp)
+    except Exception:
+        # Extract first JSON block with regex
+        match = re.search(r"\[.*\]", resp, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except Exception:
+                pass
+    # Fallback
+    return [{"tool": "final_answer", "args": {"note": "Raw plan text"}}]
 
 # -------- Router --------
 def router_node(state):
@@ -35,6 +53,15 @@ def router_node(state):
         route = "repo_eval"
     elif "show me" in q and ("project" in q or "repo" in q or "pinecone" in q or "streamlit" in q):
         route = "search"
+    # Planner (preparation requests)
+    elif (
+        "plan" in q
+        or "prepare" in q
+        or "help me prepare for" in q
+        or "prep" in q
+        or "roadmap" in q
+    ):
+        route = "planner"
     return {"route": route}
 
 # -------- Retrieve (for QA) --------
@@ -135,15 +162,23 @@ Candidate answer: {candidate}
         {"q": state["question"], "a": j.get("answer", candidate), "refs": str(state.get("refs", []))}
     )
 
+    # increment reflect retries if failed
+    retries = state.get("reflect_retries", 0)
+    if not j.get("verified", False):
+        retries += 1
+
     return {
         "answer": final_answer,
         "verified": bool(j.get("verified", False)),
         "memory": mem,
         "issues": j.get("issues", []),
+        "reflect_retries": retries
     }
 
 # -------- Reset memory (QA) --------
 def reset_node(state):
+    print("<<<<<<<<<<<<<<<<<<<---- Reset node activated.--->>>>>>>>>>>>>>>>>>>")
+    print("Reset input state:", state)
     return {"answer": "✅ Memory has been cleared.", "memory": []}
 
 # -------- Repo Evaluator --------
@@ -174,3 +209,61 @@ def search_node(state):
         lines.append(f"- {repo} — {snippet}...")
     ans = "Here are relevant repositories/snippets:\n" + "\n".join(lines)
     return {"answer": ans}
+
+# -------- Planer (Agent) --------
+def planner_node(state):
+    print("<<<<<<<<<<<<<<<<<<<---- Planner node activated.--->>>>>>>>>>>>>>>>>>>")
+    print("Planner input state:", state)
+    # Compose prompt with goal and available context
+    prompt = PLANNER_PROMPT + f"\nUser goal: {state['question']}\nContext: {state.get('context','')}\n"
+    resp = PLANNER.invoke([{"role":"system","content":SYSTEM},{"role":"user","content":prompt}]).content
+    try:
+        #plan = json.loads(resp)
+        plan = safe_parse_plan(resp)
+        answer = "Here’s your step-by-step plan:\n" + json.dumps(plan, indent=2) 
+    except Exception:
+        plan = [{"tool":"final_answer","args":{"note":"Raw plan text"}}]
+        answer = resp   # use the raw text from LLM
+    #return {"plan": plan, "answer": answer, "plan_retries": retries}
+    #try:
+        #plan = json.loads(resp)
+    #except Exception:
+        # Fallback: single final_answer action
+        #plan = [{"tool":"final_answer","args":{"note":"Could not plan; fallback answer."}}]
+    retries = state.get("plan_retries", 0)
+    return {"plan": plan, "answer": answer, "plan_retries": retries}
+
+# -------- Action Executor (Agent) --------
+def action_executor_node(state):
+    print("<<<<<<<<<<<<<<<<<<<---- Action Executor node activated.--->>>>>>>>>>>>>>>>>>>")
+    print("Action Executor input state:", state)
+    plan = state.get("plan", [])
+    base_answer = state.get("answer", "Plan results:\n")
+    results = []
+    for action in plan:
+        tool = action.get("tool")
+        args = action.get("args", {})
+        if tool == "search_docs":
+            results.append(tool_search_docs(args.get("q",""),_vs(), k=4))
+        elif tool == "fetch_repo":
+            results.append(tool_fetch_repo(args.get("repo","")))
+        #elif tool == "eval_repo":
+            #results.append(tool_eval_repo(args.get("repo","")))
+        elif tool == "summarize":
+            results.append(tool_summarize(args.get("text",""), max_sentences=args.get("max",5)))
+        elif tool == "final_answer":
+            # Build final answer from results and break
+            final_text = base_answer + "\n\n"+ "Plan results:\n" + "\n".join([str(r) for r in results])
+            #final_text = "Plan results:\n"
+            for r in results:
+                if r["type"] == "search_results":
+                    final_text += "\n".join([s["text"][:300] for s in r["results"][:2]])
+                elif r["type"] == "repo_readme":
+                    final_text += f"\nREADME excerpt:\n{r['readme'][:400]}"
+                elif r["type"] == "repo_eval":
+                    final_text += f"\nRepo eval:\n{r['report']}"
+                elif r["type"] == "summary":
+                    final_text += f"\nSummary:\n{r['summary']}"
+            return {"answer": final_text}
+    # If no final_answer encountered:
+    return {"answer": "Plan executed. No final synthesized answer produced."}

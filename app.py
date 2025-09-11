@@ -60,9 +60,9 @@ with tab1:
     # Display chat history
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
-            st.markdown(f"**🧑 You:** {msg['content']}")
+            st.markdown(f"**🧑 You:  ** {msg['content']}")
         else:
-            st.markdown(f"**🤖 Mentor Agent:** {msg['content']}")
+            st.markdown(f"**🤖 Mentor Agent:  ** {msg['content']}")
 
     # --- Input handling ---
     def handle_input():

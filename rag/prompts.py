@@ -29,3 +29,11 @@ Task:
 
 Return only JSON.
 """
+
+PLANNER_PROMPT = """
+You are a planner. Given the user goal and available tools, produce a JSON array of up to 3 actions.
+Each action = {"tool": "<tool_name>", "args": {...}}.
+Tools: search_docs(q,k), fetch_repo(owner/repo),  summarize(text,max_sentences).
+End the plan with an action: {"tool":"final_answer","args":{"note":"<brief note>"}}
+Return only JSON.
+"""
